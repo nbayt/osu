@@ -26,6 +26,11 @@ namespace osu.Game.Rulesets.Mania.Objects
         private readonly double[] heldUntil;
 
         /// <summary>
+        /// Stores the last seen note in each column.
+        /// </summary>
+        private ManiaHitObjectDifficulty[] prior_notes; 
+
+        /// <summary>
         ///  Measures jacks or more generally: repeated presses of the same button
         /// </summary>
         private readonly double[] individualStrains;
@@ -48,6 +53,11 @@ namespace osu.Game.Rulesets.Mania.Objects
         /// </summary>
         internal double OverallStrain = 1;
 
+        /// <summary>
+        /// Used to compute shared max strain for all notes of StartTime.
+        /// </summary>
+        internal double sharedMaxOverallStrain = 0;
+
         public ManiaHitObjectDifficulty(ManiaHitObject baseHitObject, int columnCount)
         {
             BaseHitObject = baseHitObject;
@@ -57,12 +67,22 @@ namespace osu.Game.Rulesets.Mania.Objects
             beatmapColumnCount = columnCount;
             heldUntil = new double[beatmapColumnCount];
             individualStrains = new double[beatmapColumnCount];
+            prior_notes = new ManiaHitObjectDifficulty[beatmapColumnCount];
 
             for (int i = 0; i < beatmapColumnCount; ++i)
             {
                 individualStrains[i] = 0;
                 heldUntil[i] = 0;
+                prior_notes[i] = null;
             }
+
+            // This is done to make sure the first note seen gets 2 individual strain.
+            // TODO: Breaks note order invariance
+            IndividualStrain = 2;
+
+            // These will get overridden if not the first note.
+            prior_notes[BaseHitObject.Column] = this;
+            heldUntil[BaseHitObject.Column] = endTime;
         }
 
         internal void CalculateStrains(ManiaHitObjectDifficulty previousHitObject, double timeRate)
@@ -78,6 +98,7 @@ namespace osu.Game.Rulesets.Mania.Objects
             // Fill up the heldUntil array
             for (int i = 0; i < beatmapColumnCount; ++i)
             {
+                prior_notes[i] = previousHitObject.prior_notes[i];
                 heldUntil[i] = previousHitObject.heldUntil[i];
 
                 // If there is at least one other overlapping end or note, then we get an addition, buuuuuut...
@@ -102,12 +123,31 @@ namespace osu.Game.Rulesets.Mania.Objects
                 individualStrains[i] = previousHitObject.individualStrains[i] * individualDecay;
             }
 
+            // TODO: Rework holds to account for tail shields and reduce individual decay during the hold.
+
             heldUntil[BaseHitObject.Column] = endTime;
+
+            // TODO: Look at prior hold note tails to affect overall difficulty.
 
             // Increase individual strain in own column
             IndividualStrain += 2.0 * holdFactor;
 
             OverallStrain = previousHitObject.OverallStrain * overallDecay + (1.0 + holdAddition) * holdFactor;
+
+            // Computes shared overall strain for notes of same StartTime.
+            sharedMaxOverallStrain = OverallStrain;
+            if(previousHitObject.BaseHitObject.StartTime == BaseHitObject.StartTime)
+            {
+                sharedMaxOverallStrain = Math.Max(sharedMaxOverallStrain, previousHitObject.sharedMaxOverallStrain);
+                for(int i = 0; i < beatmapColumnCount; i++)
+                {
+                    if(prior_notes[i] != null && prior_notes[i].BaseHitObject.StartTime == BaseHitObject.StartTime)
+                    {
+                        prior_notes[i].OverallStrain = sharedMaxOverallStrain;
+                    }
+                }
+            }
+            prior_notes[BaseHitObject.Column] = this;
         }
     }
 }
