@@ -16,7 +16,7 @@ namespace osu.Game.Rulesets.Mania.Objects
         /// These values are results of tweaking a lot and taking into account general feedback.
         /// </remarks>
         internal const double INDIVIDUAL_DECAY_BASE = 0.125;
-        internal const double INDIVIDUAL_DECAY_HOLD_BASE = 0.20; // TODO: Tweak
+        internal const double INDIVIDUAL_DECAY_HOLD_BASE = 0.18;
         internal const double OVERALL_DECAY_BASE = 0.30;
 
         internal ManiaHitObject BaseHitObject;
@@ -32,6 +32,9 @@ namespace osu.Game.Rulesets.Mania.Objects
         /// </summary>
         private ManiaHitObjectDifficulty[] prior_notes;
 
+        /// <summary>
+        /// Stores all last seen notes that have not finished being held yet.
+        /// </summary>
         private List<ManiaHitObjectDifficulty> prior_hold_notes = new List<ManiaHitObjectDifficulty>();
 
         /// <summary>
@@ -130,7 +133,7 @@ namespace osu.Game.Rulesets.Mania.Objects
                     }
                     else
                     {
-                        holdFactor += (1.75 - holdFactor) * 0.5;
+                        holdFactor += (1.65 - holdFactor) * 0.5;
                     }
                     
                 }
@@ -140,6 +143,7 @@ namespace osu.Game.Rulesets.Mania.Objects
             }
 
             // Accounts for tail shield taps and individual column decay is slower while a note is held.
+            // TODO: skip bonus if time between head and tail is small (excellent hit range for example)
             if (prior_notes[BaseHitObject.Column] != null)
             {
                 ManiaHitObjectDifficulty prior_note = prior_notes[BaseHitObject.Column];
@@ -149,7 +153,15 @@ namespace osu.Game.Rulesets.Mania.Objects
 
                     double hold_time = (prior_note.endTime - prior_note.BaseHitObject.StartTime) / timeRate;
                     prior_col_strain *= Math.Pow(INDIVIDUAL_DECAY_HOLD_BASE, hold_time / 1000);
-                    prior_col_strain += 0.8;
+                    double tailHoldFactor = 1.0;
+                    for(int i = 0; i < beatmapColumnCount; i++)
+                    {
+                        if(i != BaseHitObject.Column && heldUntil[i] > prior_note.endTime)
+                        {
+                            tailHoldFactor += (1.30 - tailHoldFactor) * 0.45;
+                        }
+                    }
+                    prior_col_strain += (0.75 * tailHoldFactor);
 
                     double empty_time = (BaseHitObject.StartTime - prior_note.endTime) / timeRate;
                     prior_col_strain *= Math.Pow(INDIVIDUAL_DECAY_BASE, empty_time / 1000);
@@ -158,6 +170,8 @@ namespace osu.Game.Rulesets.Mania.Objects
                 }
             }
 
+            // Increase individual strain in own column
+            IndividualStrain += 2.0 * holdFactor;
             heldUntil[BaseHitObject.Column] = endTime;
 
             // Tail notes contribute to overall difficulty slightly.
@@ -172,7 +186,7 @@ namespace osu.Game.Rulesets.Mania.Objects
                     ManiaHitObjectDifficulty prior_hold_note = prior_hold_notes[0];
                     double elapsed_time = (prior_hold_note.endTime - previous_time) / timeRate;
                     old_overall_strain *= Math.Pow(OVERALL_DECAY_BASE, elapsed_time / 1000);
-                    old_overall_strain += 0.4;
+                    old_overall_strain += 0.35;
                     previous_time = prior_hold_note.endTime;
                     prior_hold_notes.RemoveAt(0);
                 }
@@ -186,12 +200,6 @@ namespace osu.Game.Rulesets.Mania.Objects
             {
                 OverallStrain = previousHitObject.OverallStrain * overallDecay + (1.0 + holdAddition) * holdFactor;
             }
-
-            // Increase individual strain in own column
-            IndividualStrain += 2.0 * holdFactor;
-
-            // TODO: Delete after completion of hold overall difficulty.
-            // OverallStrain = previousHitObject.OverallStrain * overallDecay + (1.0 + holdAddition) * holdFactor;
 
             // Computes shared overall strain for notes of same StartTime.
             sharedMaxOverallStrain = OverallStrain;

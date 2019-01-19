@@ -27,7 +27,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty
         /// <summary>
         /// The weighting of each strain value decays to this number * it's previous value
         /// </summary>
-        private const double decay_weight = 0.9;
+        private const double decay_weight = 0.92;
 
         private readonly bool isForCurrentRuleset;
 
@@ -49,17 +49,17 @@ namespace osu.Game.Rulesets.Mania.Difficulty
             // Sort DifficultyHitObjects by StartTime of the HitObjects - just to make sure.
             // Note: Stable sort is done so that the ordering of hitobjects with equal start times doesn't change
             // Ordering is now ordered by start time, then endtime, then by column from left to right.
-            difficultyHitObjects.AddRange(beatmap.HitObjects.Select(h => new ManiaHitObjectDifficulty((ManiaHitObject)h, columnCount)).OrderBy(h => h.BaseHitObject.StartTime).ThenBy(h => -h.endTime).ThenBy(h => -h.BaseHitObject.Column));
+            difficultyHitObjects.AddRange(beatmap.HitObjects.Select(h => new ManiaHitObjectDifficulty((ManiaHitObject)h, columnCount)).OrderBy(h => h.BaseHitObject.StartTime).ThenBy(h => -h.endTime).ThenBy(h => h.BaseHitObject.Column));
 
             if (!calculateStrainValues(difficultyHitObjects, timeRate))
                 return new DifficultyAttributes(mods, 0);
 
 
-            double starRating = calculateDifficulty(difficultyHitObjects, timeRate) * star_scaling_factor;
+            double starRating = calculateDifficulty(difficultyHitObjects, timeRate); // Star scaling factor applied in calculateDifficulty().
 
             return new ManiaDifficultyAttributes(mods, starRating)
             {
-                // Todo: This int cast is temporary to achieve 1:1 results with osu!stable, and should be remoevd in the future
+                // Todo: This int cast is temporary to achieve 1:1 results with osu!stable, and should be removed in the future
                 GreatHitWindow = (int)(beatmap.HitObjects.First().HitWindows.Great / 2) / timeRate
             };
         }
@@ -95,6 +95,11 @@ namespace osu.Game.Rulesets.Mania.Difficulty
             double intervalEndTime = actualStrainStep;
             double maximumStrain = 0; // We need to keep track of the maximum strain in the current interval
 
+            // Strain summation variables
+            List<double> summedStrains = new List<double>();
+            summedStrains.Add(0);
+            double summedStrainsAvg = 0, summedStrainsMax = 0;
+
             ManiaHitObjectDifficulty previousHitObject = null;
             foreach (var hitObject in objects)
             {
@@ -102,6 +107,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty
                 while (hitObject.BaseHitObject.StartTime > intervalEndTime)
                 {
                     highestStrains.Add(maximumStrain);
+                    summedStrains.Add(0);
 
                     // The maximum strain of the next interval is not zero by default! We need to take the last hitObject we encountered, take its strain and apply the decay
                     // until the beginning of the next interval.
@@ -122,6 +128,7 @@ namespace osu.Game.Rulesets.Mania.Difficulty
 
                 // Obtain maximum strain
                 double strain = hitObject.IndividualStrain + hitObject.OverallStrain;
+                summedStrains[summedStrains.Count - 1] += strain;
                 maximumStrain = Math.Max(strain, maximumStrain);
 
                 previousHitObject = hitObject;
@@ -138,7 +145,42 @@ namespace osu.Game.Rulesets.Mania.Difficulty
                 weight *= decay_weight;
             }
 
-            return difficulty;
+            difficulty *= 0.8;
+            difficulty *= star_scaling_factor;
+
+            // Compute summed strains average and max
+            foreach (double strain in summedStrains)
+            {
+                summedStrainsAvg += strain;
+                if (strain > summedStrainsMax)
+                    summedStrainsMax = strain;
+            }
+            summedStrainsAvg /= summedStrains.Count;
+
+            // compute bonus or penalty
+            double error = 0.0;
+            foreach (double strain in summedStrains)
+            {
+                error += Math.Pow((summedStrainsMax - strain) / summedStrainsAvg, 2.25);
+            }
+            error /= summedStrains.Count;
+            error /= 100.0;
+
+            double rating_weight = Math.Min(difficulty / 2.5, 1.0);
+            double star_rating = (1 - (.02 * rating_weight)) * difficulty;
+
+            if(error <= 0.13)
+            {
+                double bonus = 1 + ((Math.Pow((0.13 - error) / 0.13, 1.80) * 0.10) * rating_weight);
+                star_rating *= bonus;
+            }
+            else
+            {
+                double penalty = 1 - ((0.12 - Math.Pow(Math.Max(0.15 - (error - 0.13), 0.0) / 0.15, 1.45) * 0.12) * rating_weight);
+                star_rating *= penalty;
+            }
+
+            return star_rating;
         }
 
         protected override Mod[] DifficultyAdjustmentMods
