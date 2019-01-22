@@ -23,7 +23,6 @@ namespace osu.Game.Rulesets.Mania.Objects
 
         private readonly int beatmapColumnCount;
 
-
         internal readonly double endTime;
         private readonly double[] heldUntil;
 

@@ -53,8 +53,6 @@ namespace osu.Game.Rulesets.Mania.Difficulty
 
             if (!calculateStrainValues(difficultyHitObjects, timeRate))
                 return new DifficultyAttributes(mods, 0);
-
-
             double starRating = calculateDifficulty(difficultyHitObjects, timeRate); // Star scaling factor applied in calculateDifficulty().
 
             return new ManiaDifficultyAttributes(mods, starRating)
