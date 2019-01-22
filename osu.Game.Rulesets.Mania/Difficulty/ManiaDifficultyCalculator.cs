@@ -167,19 +167,18 @@ namespace osu.Game.Rulesets.Mania.Difficulty
             error /= 100.0;
 
             double rating_weight = Math.Min(difficulty / 2.5, 1.0);
-            double star_rating = (1 - (.02 * rating_weight)) * difficulty;
+            double star_rating = (1 - (.025 * rating_weight)) * difficulty;
 
             if(error <= 0.13)
             {
-                double bonus = 1 + ((Math.Pow((0.13 - error) / 0.13, 1.80) * 0.10) * rating_weight);
+                double bonus = 1 + ((Math.Pow((0.13 - error) / 0.13, 1.80) * 0.065) * rating_weight);
                 star_rating *= bonus;
             }
             else
             {
-                double penalty = 1 - ((0.12 - Math.Pow(Math.Max(0.15 - (error - 0.13), 0.0) / 0.15, 1.45) * 0.12) * rating_weight);
+                double penalty = 1 - ((0.11 - Math.Pow(Math.Max(0.15 - (error - 0.13), 0.0) / 0.15, 1.45) * 0.11) * rating_weight);
                 star_rating *= penalty;
             }
-
             return star_rating;
         }
 

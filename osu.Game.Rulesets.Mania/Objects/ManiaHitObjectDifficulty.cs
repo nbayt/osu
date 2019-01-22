@@ -16,7 +16,7 @@ namespace osu.Game.Rulesets.Mania.Objects
         /// These values are results of tweaking a lot and taking into account general feedback.
         /// </remarks>
         internal const double INDIVIDUAL_DECAY_BASE = 0.125;
-        internal const double INDIVIDUAL_DECAY_HOLD_BASE = 0.18;
+        internal const double INDIVIDUAL_DECAY_HOLD_BASE = 0.15;
         internal const double OVERALL_DECAY_BASE = 0.30;
 
         internal ManiaHitObject BaseHitObject;
@@ -84,12 +84,18 @@ namespace osu.Game.Rulesets.Mania.Objects
             }
 
             // This is done to make sure the first note seen gets 2 individual strain.
-            // TODO: Breaks note order invariance
             IndividualStrain = 2;
+            sharedMaxOverallStrain = OverallStrain;
 
             // These will get overridden if not the first note.
             prior_notes[BaseHitObject.Column] = this;
             heldUntil[BaseHitObject.Column] = endTime;
+
+            if (endTime > BaseHitObject.StartTime)
+            {
+                //prior_hold_notes.Add(this);
+                //prior_hold_notes.Sort((x, y) => x.endTime.CompareTo(y.endTime));
+            }
         }
 
         internal void CalculateStrains(ManiaHitObjectDifficulty previousHitObject, double timeRate)
@@ -114,7 +120,7 @@ namespace osu.Game.Rulesets.Mania.Objects
                 // With the new sorting logic, this rule only applies to previous hold notes NOT on the same beat.
                 if (BaseHitObject.StartTime < heldUntil[i] && endTime > heldUntil[i])
                 {
-                    holdAddition = 1.0;
+                    holdAddition = 0.55;
                 }
 
                 // ... this addition only is valid if there is _no_ other note with the same ending. Releasing multiple notes at the same time is just as easy as releasing 1
@@ -133,7 +139,7 @@ namespace osu.Game.Rulesets.Mania.Objects
                     }
                     else
                     {
-                        holdFactor += (1.65 - holdFactor) * 0.5;
+                        holdFactor += (1.415 - holdFactor) * 0.45;
                     }
                     
                 }
@@ -143,7 +149,6 @@ namespace osu.Game.Rulesets.Mania.Objects
             }
 
             // Accounts for tail shield taps and individual column decay is slower while a note is held.
-            // TODO: skip bonus if time between head and tail is small (excellent hit range for example)
             if (prior_notes[BaseHitObject.Column] != null)
             {
                 ManiaHitObjectDifficulty prior_note = prior_notes[BaseHitObject.Column];
@@ -154,15 +159,28 @@ namespace osu.Game.Rulesets.Mania.Objects
                     double hold_time = (prior_note.endTime - prior_note.BaseHitObject.StartTime) / timeRate;
                     prior_col_strain *= Math.Pow(INDIVIDUAL_DECAY_HOLD_BASE, hold_time / 1000);
                     double tailHoldFactor = 1.0;
-                    for(int i = 0; i < beatmapColumnCount; i++)
+                    double duration_factor = 1.0;
+                    double key_factor = 1.0;
+                    if (hold_time > 40)
                     {
-                        if(i != BaseHitObject.Column && heldUntil[i] > prior_note.endTime)
+                        duration_factor = Math.Min(1.0, (hold_time - 40) / 30);
+                        if(beatmapColumnCount > 9)
                         {
-                            tailHoldFactor += (1.30 - tailHoldFactor) * 0.45;
+                            key_factor = 0.85;
                         }
+                        else if (beatmapColumnCount > 4)
+                        {
+                            key_factor = 1 - (0.15 * ((beatmapColumnCount - 4) / 5));
+                        }
+                        for (int i = 0; i < beatmapColumnCount; i++)
+                        {
+                            if (i != BaseHitObject.Column && heldUntil[i] > prior_note.endTime)
+                            {
+                                tailHoldFactor += (1.25 - tailHoldFactor) * 0.4;
+                            }
+                        }
+                        prior_col_strain += (0.7 * tailHoldFactor * key_factor * duration_factor);
                     }
-                    prior_col_strain += (0.75 * tailHoldFactor);
-
                     double empty_time = (BaseHitObject.StartTime - prior_note.endTime) / timeRate;
                     prior_col_strain *= Math.Pow(INDIVIDUAL_DECAY_BASE, empty_time / 1000);
 
@@ -177,7 +195,6 @@ namespace osu.Game.Rulesets.Mania.Objects
             // Tail notes contribute to overall difficulty slightly.
             if(prior_hold_notes.Count>0)
             {
-                // do stuff
                 double old_overall_strain = previousHitObject.OverallStrain;
                 double previous_time = previousHitObject.BaseHitObject.StartTime;
 
@@ -185,8 +202,25 @@ namespace osu.Game.Rulesets.Mania.Objects
                 {
                     ManiaHitObjectDifficulty prior_hold_note = prior_hold_notes[0];
                     double elapsed_time = (prior_hold_note.endTime - previous_time) / timeRate;
+                    double hold_time = (prior_hold_note.endTime - prior_hold_note.BaseHitObject.StartTime) / timeRate;
+
                     old_overall_strain *= Math.Pow(OVERALL_DECAY_BASE, elapsed_time / 1000);
-                    old_overall_strain += 0.35;
+
+                    double key_factor = 1.0;
+                    double duration_factor = 1.0;
+                    if(hold_time > 40)
+                    {
+                        duration_factor = Math.Min(1.0, ((hold_time - 40) / 40));
+                        if (beatmapColumnCount > 9)
+                        {
+                            key_factor = 0.76;
+                        }
+                        else if (beatmapColumnCount > 4)
+                        {
+                            key_factor = 1 - (0.24 * (((double) (beatmapColumnCount) - 4.0) / 5.0));
+                        }
+                        old_overall_strain += (0.35 * key_factor * duration_factor);
+                    }
                     previous_time = prior_hold_note.endTime;
                     prior_hold_notes.RemoveAt(0);
                 }
@@ -211,6 +245,7 @@ namespace osu.Game.Rulesets.Mania.Objects
                     if(prior_notes[i] != null && prior_notes[i].BaseHitObject.StartTime == BaseHitObject.StartTime)
                     {
                         prior_notes[i].OverallStrain = sharedMaxOverallStrain;
+                        prior_notes[i].sharedMaxOverallStrain = sharedMaxOverallStrain;
                     }
                 }
             }
